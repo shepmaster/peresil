@@ -1,5 +1,5 @@
 /// A location in the parsed data
-pub trait Point: PartialOrd + Copy {
+pub trait Point: Ord + Copy {
     fn zero() -> Self;
 }
 
@@ -12,23 +12,29 @@ struct Failures<P, E> {
     kinds: Vec<E>,
 }
 
+use std::cmp::Ordering;
+
 impl<P, E> Failures<P, E>
     where P: Point
 {
     fn new() -> Failures<P, E> { Failures { point: P::zero(), kinds: Vec::new() } }
 
     fn add(&mut self, point: P, failure: E) {
-        if point < self.point {
-            // Do nothing, our existing failures are better
-        } else if point > self.point {
-            // The new failure is better, toss existing failures
-            self.point = point;
-            self.kinds.clear();
-            self.kinds.push(failure);
-        } else {
-            // Multiple failures at the same point, tell the user all
-            // the ways they could do better.
-            self.kinds.push(failure);
+        match point.cmp(&self.point) {
+            Ordering::Less => {
+                // Do nothing, our existing failures are better
+            },
+            Ordering::Greater => {
+                // The new failure is better, toss existing failures
+                self.point = point;
+                self.kinds.clear();
+                self.kinds.push(failure);
+            },
+            Ordering::Equal => {
+                // Multiple failures at the same point, tell the user all
+                // the ways they could do better.
+                self.kinds.push(failure);
+            },
         }
     }
 
@@ -241,15 +247,23 @@ macro_rules! try_parse(
 
 pub type Identifier<'a, T> = (&'a str, T);
 
-#[derive(Debug,Copy,Clone,PartialEq)]
+#[derive(Debug,Copy,Clone,PartialEq,Eq)]
 pub struct StringPoint<'a> {
     pub s: &'a str,
     pub offset: usize,
 }
 
 impl<'a> PartialOrd for StringPoint<'a> {
-    fn partial_cmp(&self, other: &StringPoint<'a>) -> Option<::std::cmp::Ordering> {
-        self.offset.partial_cmp(&other.offset)
+    #[inline]
+    fn partial_cmp(&self, other: &StringPoint<'a>) -> Option<Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+impl<'a> Ord for StringPoint<'a> {
+    #[inline]
+    fn cmp(&self, other: &StringPoint<'a>) -> Ordering {
+        self.offset.cmp(&other.offset)
     }
 }
 
