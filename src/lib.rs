@@ -6,6 +6,16 @@ pub trait Point: Ord + Copy {
 impl Point for usize { fn zero() -> usize { 0 } }
 impl Point for i32 { fn zero() -> i32 { 0 } }
 
+pub trait Recoverable {
+    /// Indicate if the error should terminate all
+    /// parsing. Non-recoverable errors will not allow for alternates
+    /// to be tried, basically unwinding the parsing stack all the way
+    /// back to the beginning. Unrecoverable errors are useful for
+    /// errors that indicate that the content was well-formed but not
+    /// semantically correct.
+    fn recoverable(&self) -> bool;
+}
+
 #[derive(Debug,PartialEq)]
 struct Failures<P, E> {
     point: P,
@@ -15,7 +25,7 @@ struct Failures<P, E> {
 use std::cmp::Ordering;
 
 impl<P, E> Failures<P, E>
-    where P: Point
+    where P: Point,
 {
     fn new() -> Failures<P, E> { Failures { point: P::zero(), kinds: Vec::new() } }
 
@@ -26,9 +36,7 @@ impl<P, E> Failures<P, E>
             },
             Ordering::Greater => {
                 // The new failure is better, toss existing failures
-                self.point = point;
-                self.kinds.clear();
-                self.kinds.push(failure);
+                self.replace(point, failure);
             },
             Ordering::Equal => {
                 // Multiple failures at the same point, tell the user all
@@ -36,6 +44,12 @@ impl<P, E> Failures<P, E>
                 self.kinds.push(failure);
             },
         }
+    }
+
+    fn replace(&mut self, point: P, failure: E) {
+        self.point = point;
+        self.kinds.clear();
+        self.kinds.push(failure);
     }
 
     fn into_progress<T>(self) -> Progress<P, T, Vec<E>> {
@@ -118,7 +132,8 @@ pub struct ParseMaster<P, E> {
 }
 
 impl<'a, P, E> ParseMaster<P, E>
-    where P: Point
+    where P: Point,
+          E: Recoverable,
 {
     /// Start parsing a string
     pub fn new() -> ParseMaster<P, E> {
@@ -133,7 +148,11 @@ impl<'a, P, E> ParseMaster<P, E>
         match progress {
             Progress { status: Status::Success(..), .. } => progress.map_err(|_| ()),
             Progress { status: Status::Failure(f), point } => {
-                self.failures.add(point, f);
+                if f.recoverable() {
+                    self.failures.add(point, f);
+                } else {
+                    self.failures.replace(point, f);
+                }
                 Progress { status: Status::Failure(()), point: point }
             }
         }
@@ -175,9 +194,13 @@ impl<'a, P, E> ParseMaster<P, E>
                     current_point = point;
                 },
                 Progress { status: Status::Failure(f), point } => {
-                    self.failures.add(point, f);
-                    break;
-                }
+                    if f.recoverable() {
+                        self.failures.add(point, f);
+                        break;
+                    } else {
+                        return Progress { status: Status::Failure(f), point: point };
+                    }
+                },
             }
         }
 
@@ -203,7 +226,8 @@ pub struct Alternate<'pm, P : 'pm, T, E : 'pm> {
 
 /// An alternate consumes the error of children, tracking them
 impl<'pm, P, T, E> Alternate<'pm, P, T, E>
-    where P: Point
+    where P: Point,
+          E: Recoverable,
 {
     fn run_one<F>(&mut self, parser: F)
         where F: FnOnce(&mut ParseMaster<P, E>) -> Progress<P, T, E>
@@ -219,10 +243,19 @@ impl<'pm, P, T, E> Alternate<'pm, P, T, E>
     pub fn one<F>(mut self, parser: F) -> Alternate<'pm, P, T, E>
         where F: FnOnce(&mut ParseMaster<P, E>) -> Progress<P, T, E>
     {
+        let recoverable =
+            if let Some(Progress { status: Status::Failure(ref f), .. }) = self.current {
+                f.recoverable()
+            } else {
+                false
+            };
+
         match self.current {
             None => self.run_one(parser),
             Some(Progress { status: Status::Success(..), .. }) => {},
-            Some(Progress { status: Status::Failure(..), .. }) => self.run_one(parser),
+            Some(Progress { status: Status::Failure(..), .. })
+                if recoverable => self.run_one(parser),
+            Some(Progress { status: Status::Failure(..), .. }) => {},
         }
 
         self
@@ -329,10 +362,14 @@ impl<'a> StringPoint<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::{ParseMaster,Progress,Status,StringPoint};
+    use super::{ParseMaster,Progress,Status,StringPoint,Recoverable};
 
     #[derive(Debug,Copy,Clone,PartialEq,Eq,PartialOrd,Ord)]
     struct AnError(u8);
+
+    impl Recoverable for AnError {
+        fn recoverable(&self) -> bool { self.0 < 0x80 }
+    }
 
     type SimpleMaster = ParseMaster<usize, AnError>;
     type SimpleProgress<T> = Progress<usize, T, AnError>;
@@ -392,7 +429,7 @@ mod test {
 
     #[test]
     fn one_success() {
-        let mut d = ParseMaster::<_, ()>::new();
+        let mut d = ParseMaster::<_, AnError>::new();
 
         let r = d.require(|_| Progress { point: 0, status: Status::Success(42) });
 
@@ -415,7 +452,7 @@ mod test {
 
     #[test]
     fn success_before_failure() {
-        let mut d = ParseMaster::<_, ()>::new();
+        let mut d = ParseMaster::<_, AnError>::new();
 
         let r = d.alternate()
             .one(|_| Progress { point: 0, status: Status::Success(42) })
@@ -528,6 +565,18 @@ mod test {
     }
 
     #[test]
+    fn alternate_stops_parsing_after_unrecoverable_failure() {
+        let mut d = ParseMaster::new();
+        let r = d.alternate()
+            .one(|_| Progress { point: 0, status: Status::Failure(AnError(255)) })
+            .one(|_| Progress { point: 0, status: Status::Success(()) })
+            .finish();
+        let r = d.finish(r);
+
+        assert_eq!(r, Progress { point: 0, status: Status::Failure(vec![AnError(255)]) });
+    }
+
+    #[test]
     fn optional_present() {
         fn optional(_: &mut SimpleMaster, pt: usize) -> SimpleProgress<u8> {
             Progress { point: pt + 1, status: Status::Success(1) }
@@ -584,6 +633,19 @@ mod test {
         let r = d.finish(r);
 
         assert_eq!(r, Progress { point: 0, status: Status::Success(vec![]) });
+    }
+
+    #[test]
+    fn zero_or_more_fails_on_unrecoverable_failure() {
+        fn body(_: &mut SimpleMaster, pt: usize) -> SimpleProgress<u8> {
+            Progress { point: pt, status: Status::Failure(AnError(255)) }
+        }
+
+        let mut d = ParseMaster::new();
+        let r = d.zero_or_more(0, |d, pt| body(d, pt));
+        let r = d.finish(r);
+
+        assert_eq!(r, Progress { point: 0, status: Status::Failure(vec![AnError(255)]) });
     }
 
     type StringMaster<'a> = ParseMaster<StringPoint<'a>, AnError>;

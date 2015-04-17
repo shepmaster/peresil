@@ -21,7 +21,7 @@
 extern crate peresil;
 
 use std::borrow::ToOwned;
-use peresil::{ParseMaster, StringPoint};
+use peresil::{ParseMaster, StringPoint, Recoverable};
 
 #[derive(Debug,Copy,Clone,PartialEq)]
 enum Unit {
@@ -49,6 +49,18 @@ enum Error {
     UnknownUnit,
     ExpectedName,
     InputRemaining,
+}
+
+impl Recoverable for Error {
+    fn recoverable(&self) -> bool {
+        use Error::*;
+
+        match *self {
+            ExpectedWhitespace | ExpectedNumber | ExpectedName => true,
+            InputRemaining => true,
+            UnknownUnit  => false,
+        }
+    }
 }
 
 type IngredientMaster<'a> = peresil::ParseMaster<StringPoint<'a>, Error>;

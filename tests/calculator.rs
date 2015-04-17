@@ -22,7 +22,7 @@
 #[macro_use]
 extern crate peresil;
 
-use peresil::{ParseMaster, StringPoint};
+use peresil::{ParseMaster, StringPoint, Recoverable};
 
 // It's recommended to make type aliases to clean up signatures
 type CalcMaster<'a> = ParseMaster<StringPoint<'a>, Error>;
@@ -53,8 +53,19 @@ impl Expression {
 
 #[derive(Debug,Copy,Clone,PartialEq)]
 enum Error {
-    NotANumber,
+    ExpectedNumber,
     InvalidNumber(u8),
+}
+
+impl Recoverable for Error {
+    fn recoverable(&self) -> bool {
+        use Error::*;
+
+        match *self {
+            ExpectedNumber => true,
+            InvalidNumber(..) => false,
+        }
+    }
 }
 
 /// Maps an operator to a function that builds the corresponding Expression
@@ -102,7 +113,7 @@ fn parse_num<'a>(_: &mut CalcMaster<'a>, pt: StringPoint<'a>) -> CalcProgress<'a
     let digits = pt.s.chars().take_while(|&c| c >= '0' && c <= '9').count();
     let r = if digits == 0 { pt.consume_to(None) } else { pt.consume_to(Some(digits)) };
 
-    let (pt, v) = try_parse!(r.map_err(|_| Error::NotANumber));
+    let (pt, v) = try_parse!(r.map_err(|_| Error::ExpectedNumber));
 
     let num = v.parse().unwrap();
 
@@ -212,7 +223,7 @@ fn all_operators_together() {
 
 #[test]
 fn failure_not_a_number() {
-    assert_eq!(parse("cow"), Err((0, vec![Error::NotANumber])));
+    assert_eq!(parse("cow"), Err((0, vec![Error::ExpectedNumber])));
 }
 
 #[test]
