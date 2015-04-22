@@ -1,18 +1,76 @@
+//! A simple and simplistic parsing library
+//!
+//! ### Example
+//!
+//! ```
+//! #[macro_use]
+//! extern crate peresil;
+//!
+//! use peresil::{ParseMaster,Progress,Recoverable,Status,StringPoint};
+//!
+//! type DemoMaster<'a> = ParseMaster<StringPoint<'a>, DemoError>;
+//! type DemoProgress<'a, T> = Progress<StringPoint<'a>, T, DemoError>;
+//! enum DemoError {
+//!     ExpectedGreeting,
+//!     ExpectedWhitespace,
+//!     ExpectedObject,
+//! }
+//!
+//! impl Recoverable for DemoError {
+//!     fn recoverable(&self) -> bool { true }
+//! }
+//!
+//! fn parse_basic<'a>(pm: &mut DemoMaster<'a>, pt: StringPoint<'a>)
+//!                   -> DemoProgress<'a, (&'a str, &'a str)>
+//! {
+//!     let tmp = pm.alternate()
+//!         .one(|_| pt.consume_literal("goodbye").map_err(|_| DemoError::ExpectedGreeting))
+//!         .one(|_| pt.consume_literal("hello").map_err(|_| DemoError::ExpectedGreeting))
+//!         .finish();
+//!     let (pt, greeting) = try_parse!(tmp);
+//!
+//!     let (pt, _) = try_parse!(pt.consume_literal(" ").map_err(|_| DemoError::ExpectedWhitespace));
+//!
+//!     let tmp = pm.alternate()
+//!         .one(|_| pt.consume_literal("world").map_err(|_| DemoError::ExpectedObject))
+//!         .one(|_| pt.consume_literal("moon").map_err(|_| DemoError::ExpectedObject))
+//!         .finish();
+//!     let (pt, object) = try_parse!(tmp);
+//!
+//!     Progress::success(pt, (greeting, object))
+//! }
+//!
+//! fn main() {
+//!     let mut pm = ParseMaster::new();
+//!     let pt = StringPoint::new("hello world");
+//!
+//!     let result = parse_basic(&mut pm, pt);
+//!     let (greeting, object) = match pm.finish(result) {
+//!         Progress { status: Status::Success(v), .. } => v,
+//!         Progress { status: Status::Failure(..), .. } => panic!("Did not parse"),
+//!     };
+//!
+//!     println!("Parsed [{}], [{}]", greeting, object);
+//! }
+//!
+
 /// A location in the parsed data
 pub trait Point: Ord + Copy {
+    /// The initial point
     fn zero() -> Self;
 }
 
 impl Point for usize { fn zero() -> usize { 0 } }
 impl Point for i32 { fn zero() -> i32 { 0 } }
 
+/// Indicate if an error should terminate all parsing.
+///
+/// Non-recoverable errors will not allow for alternatives to be
+/// tried, basically unwinding the parsing stack all the way back to
+/// the beginning. Unrecoverable errors are useful for errors that
+/// indicate that the content was well-formed but not semantically
+/// correct.
 pub trait Recoverable {
-    /// Indicate if the error should terminate all
-    /// parsing. Non-recoverable errors will not allow for alternates
-    /// to be tried, basically unwinding the parsing stack all the way
-    /// back to the beginning. Unrecoverable errors are useful for
-    /// errors that indicate that the content was well-formed but not
-    /// semantically correct.
     fn recoverable(&self) -> bool;
 }
 
@@ -57,6 +115,7 @@ impl<P, E> Failures<P, E>
     }
 }
 
+/// An analog to `Result`, specialized for parsing.
 #[derive(Debug,PartialEq)]
 pub enum Status<T, E> {
     Success(T),
@@ -83,17 +142,21 @@ impl<T, E> Status<T, E> {
     }
 }
 
+/// Tracks where the parser currently is and if it is successful.
+///
+/// On success, some value has been parsed. On failure, nothing has
+/// been parsed and the value indicates the reason for the failure.
+/// The returned point indicates where to next start parsing, often
+/// unchanged on failure.
 #[must_use]
 #[derive(Debug,PartialEq)]
 pub struct Progress<P, T, E> {
+    /// The current location.
     pub point: P,
+    /// If the point indicates the location of a successful or failed parse.
     pub status: Status<T, E>,
 }
 
-/// Success means we parsed some value, the point is at the next place
-/// to start parsing Failure means we didn't parse a thing, "why" is
-/// the value, the point is at the next place to start parsing (often
-/// unchanged).
 impl<P, T, E> Progress<P, T, E> {
     pub fn success(point: P, val: T) -> Progress<P, T, E> {
         Progress { point: point, status: Status::Success(val) }
@@ -103,22 +166,26 @@ impl<P, T, E> Progress<P, T, E> {
         Progress { point: point, status: Status::Failure(val) }
     }
 
+    /// Convert the success value, if there is one.
     pub fn map<F, T2>(self, f: F) -> Progress<P, T2, E>
         where F: FnOnce(T) -> T2
     {
         Progress { point: self.point, status: self.status.map(f) }
     }
 
+    /// Convert the failure value, if there is one.
     pub fn map_err<F, E2>(self, f: F) -> Progress<P, T, E2>
         where F: FnOnce(E) -> E2
     {
         Progress { point: self.point, status: self.status.map_err(f) }
     }
 
-    // If we fail N optionals and then a required, it'd be nice to
-    // report all the optional things. Might be difficult to do that
-    // and return the optional value.
+    /// Returns the value on success, or rewinds the point and returns
+    /// `None` on failure.
     pub fn optional(self, reset_to: P) -> (P, Option<T>) {
+        // If we fail N optionals and then a required, it'd be nice to
+        // report all the optional things. Might be difficult to do
+        // that and return the optional value.
         match self {
             Progress { status: Status::Success(val), point } => (point, Some(val)),
             Progress { status: Status::Failure(..), .. } => (reset_to, None),
@@ -126,6 +193,11 @@ impl<P, T, E> Progress<P, T, E> {
     }
 }
 
+/// The main entrypoint to parsing.
+///
+/// This tracks the collection of outstanding errors and provides
+/// helper methods for parsing alternative paths and sequences of
+/// other parsers.
 #[derive(Debug,PartialEq)]
 pub struct ParseMaster<P, E> {
     failures: Failures<P, E>,
@@ -135,15 +207,12 @@ impl<'a, P, E> ParseMaster<P, E>
     where P: Point,
           E: Recoverable,
 {
-    /// Start parsing a string
     pub fn new() -> ParseMaster<P, E> {
         ParseMaster {
             failures: Failures::new(),
         }
     }
 
-    /// consume a potential error
-    /// used when the last step is sequential
     fn consume<T>(&mut self, progress: Progress<P, T, E>) -> Progress<P, T, ()> {
         match progress {
             Progress { status: Status::Success(..), .. } => progress.map_err(|_| ()),
@@ -168,7 +237,7 @@ impl<'a, P, E> ParseMaster<P, E>
             .finish()
     }
 
-    /// run sub-parsers in order until one succeeds
+    /// Run sub-parsers in order until one succeeds.
     pub fn alternate<'pm, T>(&'pm mut self) -> Alternate<'pm, P, T, E> {
         Alternate {
             master: self,
@@ -176,10 +245,12 @@ impl<'a, P, E> ParseMaster<P, E>
         }
     }
 
-    /// Runs the parser until it fails. Each successfully parsed value
-    /// is kept and returned. This always succeeds, but the
-    /// point may be left in the middle of a token.
-    // TODO: perhaps we need a concept of "fully parsed" - that would allow this to fail
+    /// Runs the parser until it fails.
+    ///
+    /// If the parser fails due to a recoverable error, a collection
+    /// of values will be returned and the point will be at the end of
+    /// the last successful parse.  If the error is not recoverable,
+    /// the error will be passed through directly.
     pub fn zero_or_more<F, T>(&mut self, point: P, mut parser: F) -> Progress<P, Vec<T>, E>
         where F: FnMut(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>
     {
@@ -207,7 +278,8 @@ impl<'a, P, E> ParseMaster<P, E>
         Progress { status: Status::Success(values), point: current_point }
     }
 
-    /// When all parsing is complete, regain access to the failures
+    /// When parsing is complete, provide the final result and gain
+    /// access to all failures.
     pub fn finish<T>(mut self, progress: Progress<P, T, E>) -> Progress<P, T, Vec<E>> {
         let progress = self.consume(progress);
 
@@ -218,13 +290,13 @@ impl<'a, P, E> ParseMaster<P, E>
     }
 }
 
+/// Follows the first successful parsing path.
 #[must_use]
 pub struct Alternate<'pm, P : 'pm, T, E : 'pm> {
     master: &'pm mut ParseMaster<P, E>,
     current: Option<Progress<P, T, E>>,
 }
 
-/// An alternate consumes the error of children, tracking them
 impl<'pm, P, T, E> Alternate<'pm, P, T, E>
     where P: Point,
           E: Recoverable,
@@ -240,6 +312,7 @@ impl<'pm, P, T, E> Alternate<'pm, P, T, E>
         self.current = Some(r);
     }
 
+    /// Run one alternative parser.
     pub fn one<F>(mut self, parser: F) -> Alternate<'pm, P, T, E>
         where F: FnOnce(&mut ParseMaster<P, E>) -> Progress<P, T, E>
     {
@@ -261,11 +334,13 @@ impl<'pm, P, T, E> Alternate<'pm, P, T, E>
         self
     }
 
+    /// Complete the alternatives, returning the first successful branch.
     pub fn finish(self) -> Progress<P, T, E> {
         self.current.unwrap()
     }
 }
 
+/// An analog to `try!`, but for `Progress`
 #[macro_export]
 macro_rules! try_parse(
     ($e:expr) => ({
@@ -278,11 +353,18 @@ macro_rules! try_parse(
     });
 );
 
+/// Matches a literal string to a specific type, usually an enum.
 pub type Identifier<'a, T> = (&'a str, T);
 
+/// Tracks the location of parsing in a string, the most common case.
+///
+/// Helper methods are provided to do basic parsing tasks, such as
+/// finding literal strings.
 #[derive(Debug,Copy,Clone,PartialEq,Eq)]
 pub struct StringPoint<'a> {
+    /// The portion of the input string to start parsing next
     pub s: &'a str,
+    /// How far into the original string we are
     pub offset: usize,
 }
 
@@ -309,6 +391,7 @@ impl<'a> StringPoint<'a> {
         StringPoint { s: s, offset: 0 }
     }
 
+    /// Slices the string.
     pub fn to(self, other: StringPoint<'a>) -> &'a str {
         let len = other.offset - self.offset;
         &self.s[..len]
@@ -328,6 +411,9 @@ impl<'a> StringPoint<'a> {
         Progress { point: self, status: Status::Failure(()) }
     }
 
+    /// Advances the point by the number of bytes. If the value is
+    /// `None`, then no value was able to be consumed, and the result
+    /// is a failure.
     pub fn consume_to(&self, l: Option<usize>) -> Progress<StringPoint<'a>, &'a str, ()> {
         match l {
             None => self.fail(),
@@ -335,6 +421,7 @@ impl<'a> StringPoint<'a> {
         }
     }
 
+    /// Advances the point if it starts with the literal.
     pub fn consume_literal(self, val: &str) -> Progress<StringPoint<'a>, &'a str, ()> {
         if self.s.starts_with(val) {
             self.success(val.len())
@@ -343,6 +430,8 @@ impl<'a> StringPoint<'a> {
         }
     }
 
+    /// Iterates through the identifiers and advances the point on the
+    /// first matching identifier.
     pub fn consume_identifier<T>(self, identifiers: &[Identifier<T>])
                                  -> Progress<StringPoint<'a>, T, ()>
         where T: Clone
