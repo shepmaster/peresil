@@ -227,16 +227,6 @@ impl<'a, P, E> ParseMaster<P, E>
         }
     }
 
-    /// run a single subparser
-    // TODO: decide utility
-    fn require<F, T>(&mut self, parser: F) -> Progress<P, T, E>
-        where F: FnOnce(&mut ParseMaster<P, E>) -> Progress<P, T, E>
-    {
-        self.alternate()
-            .one(parser)
-            .finish()
-    }
-
     /// Run sub-parsers in order until one succeeds.
     pub fn alternate<'pm, T>(&'pm mut self) -> Alternate<'pm, P, T, E> {
         Alternate {
@@ -465,11 +455,9 @@ mod test {
 
     #[test]
     fn one_error() {
-        let mut d = ParseMaster::new();
+        let d = ParseMaster::new();
 
-        let r = d.require::<_, ()>(|_| Progress { point: 0, status: Status::Failure(AnError(1)) });
-
-        let r = d.finish(r);
+        let r = d.finish::<()>(Progress { point: 0, status: Status::Failure(AnError(1)) });
 
         assert_eq!(r, Progress { point: 0, status: Status::Failure(vec![AnError(1)]) });
     }
@@ -518,11 +506,10 @@ mod test {
 
     #[test]
     fn one_success() {
-        let mut d = ParseMaster::<_, AnError>::new();
+        let d = ParseMaster::<_, AnError>::new();
 
-        let r = d.require(|_| Progress { point: 0, status: Status::Success(42) });
+        let r = d.finish(Progress { point: 0, status: Status::Success(42) });
 
-        let r = d.finish(r);
         assert_eq!(r, Progress { point: 0, status: Status::Success(42) });
     }
 
