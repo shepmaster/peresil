@@ -10,5 +10,6 @@ keywords = ["parser"]
 
 homepage = "https://github.com/shepmaster/peresil"
 repository = "https://github.com/shepmaster/peresil"
+documentation = "https://shepmaster.github.io/peresil/"
 
 license = "MIT"

@@ -1,6 +1,12 @@
 # Peresil
 
+[![Build Status](https://travis-ci.org/shepmaster/peresil.svg?branch=master)](https://travis-ci.org/shepmaster/peresil)
+
 A simple and simplistic string parsing library in Rust.
+
+Check [the docs] for a quick introduction.
+
+[the docs]: https://shepmaster.github.io/peresil/
 
 ## Contributing
 
