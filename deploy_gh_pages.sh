@@ -2,7 +2,7 @@
 
 set -eux
 
-if [[ $TRAVIS_BRANCH -ne master ]] || [[ $TRAVIS_PULL_REQUEST -eq true ]]; then
+if [[ "${TRAVIS_BRANCH}" -ne 'master' ]] || [[ "${TRAVIS_PULL_REQUEST}" -eq 'true' ]]; then
    exit 0
 fi
 
