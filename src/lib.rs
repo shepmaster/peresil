@@ -227,6 +227,31 @@ impl<'a, P, E> ParseMaster<P, E>
         }
     }
 
+    /// Returns the value on success, or rewinds the point and returns
+    /// `None` on a recoverable failure. Non-recoverable failures are
+    /// propagated.
+    pub fn optional<T, F>(&mut self, point: P, mut parser: F)
+                          -> Progress<P, Option<T>, E>
+        where F: FnMut(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+    {
+        let orig_point = point;
+        // If we fail N optionals and then a required, it'd be nice to
+        // report all the optional things. Might be difficult to do
+        // that and return the optional value.
+        match parser(self, point) {
+            Progress { status: Status::Success(val), point } => {
+                Progress::success(point, Some(val))
+            },
+            Progress { status: Status::Failure(f), point } => {
+                if f.recoverable() {
+                    Progress::success(orig_point, None)
+                } else {
+                    Progress::failure(point, f)
+                }
+            },
+        }
+    }
+
     /// Run sub-parsers in order until one succeeds.
     pub fn alternate<'pm, T>(&'pm mut self) -> Alternate<'pm, P, T, E> {
         Alternate {
@@ -676,6 +701,32 @@ mod test {
 
         assert_eq!(pt, 0);
         assert_eq!(val, None);
+    }
+
+    #[test]
+    fn optional_with_recoverable() {
+        fn optional(_: &mut SimpleMaster, pt: usize) -> SimpleProgress<u8> {
+            Progress { point: pt + 1, status: Status::Failure(AnError(1)) }
+        }
+
+        let mut d = ParseMaster::new();
+        let r = d.optional(0, |pm, pt| optional(pm, pt));
+        let r = d.finish(r);
+
+        assert_eq!(r, Progress { point: 0, status: Status::Success(None) });
+    }
+
+    #[test]
+    fn optional_with_unrecoverable() {
+        fn optional(_: &mut SimpleMaster, pt: usize) -> SimpleProgress<u8> {
+            Progress { point: pt + 1, status: Status::Failure(AnError(255)) }
+        }
+
+        let mut d = ParseMaster::new();
+        let r = d.optional(0, |pm, pt| optional(pm, pt));
+        let r = d.finish(r);
+
+        assert_eq!(r, Progress { point: 1, status: Status::Failure(vec![AnError(255)]) });
     }
 
     #[test]
