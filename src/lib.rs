@@ -407,16 +407,19 @@ impl<'a> Point for StringPoint<'a> {
 }
 
 impl<'a> StringPoint<'a> {
+    #[inline]
     pub fn new(s: &'a str) -> StringPoint<'a> {
         StringPoint { s: s, offset: 0 }
     }
 
     /// Slices the string.
+    #[inline]
     pub fn to(self, other: StringPoint<'a>) -> &'a str {
         let len = other.offset - self.offset;
         &self.s[..len]
     }
 
+    #[inline]
     fn success(self, len: usize) -> Progress<StringPoint<'a>, &'a str, ()> {
         let matched = &self.s[..len];
         let rest = &self.s[len..];
@@ -427,6 +430,7 @@ impl<'a> StringPoint<'a> {
         }
     }
 
+    #[inline]
     fn fail<T>(self) -> Progress<StringPoint<'a>, T, ()> {
         Progress { point: self, status: Status::Failure(()) }
     }
@@ -434,6 +438,7 @@ impl<'a> StringPoint<'a> {
     /// Advances the point by the number of bytes. If the value is
     /// `None`, then no value was able to be consumed, and the result
     /// is a failure.
+    #[inline]
     pub fn consume_to(&self, l: Option<usize>) -> Progress<StringPoint<'a>, &'a str, ()> {
         match l {
             None => self.fail(),
@@ -442,6 +447,7 @@ impl<'a> StringPoint<'a> {
     }
 
     /// Advances the point if it starts with the literal.
+    #[inline]
     pub fn consume_literal(self, val: &str) -> Progress<StringPoint<'a>, &'a str, ()> {
         if self.s.starts_with(val) {
             self.success(val.len())
@@ -452,6 +458,7 @@ impl<'a> StringPoint<'a> {
 
     /// Iterates through the identifiers and advances the point on the
     /// first matching identifier.
+    #[inline]
     pub fn consume_identifier<T>(self, identifiers: &[Identifier<T>])
                                  -> Progress<StringPoint<'a>, T, ()>
         where T: Clone
