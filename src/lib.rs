@@ -294,13 +294,18 @@ impl<'a, P, E> ParseMaster<P, E>
     }
 
     /// When parsing is complete, provide the final result and gain
-    /// access to all failures.
-    pub fn finish<T>(mut self, progress: Progress<P, T, E>) -> Progress<P, T, Vec<E>> {
+    /// access to all failures. Will be recycled and may be used for
+    /// further parsing.
+    pub fn finish<T>(&mut self, progress: Progress<P, T, E>) -> Progress<P, T, Vec<E>> {
         let progress = self.consume(progress);
 
         match progress {
             Progress { status: Status::Success(..), .. } => progress.map_err(|_| Vec::new()),
-            Progress { status: Status::Failure(..), .. } => self.failures.into_progress(),
+            Progress { status: Status::Failure(..), .. } => {
+                use std::mem;
+                let f = mem::replace(&mut self.failures, Failures::new());
+                f.into_progress()
+            },
         }
     }
 }
@@ -480,7 +485,7 @@ mod test {
 
     #[test]
     fn one_error() {
-        let d = ParseMaster::new();
+        let mut d = ParseMaster::new();
 
         let r = d.finish::<()>(Progress { point: 0, status: Status::Failure(AnError(1)) });
 
@@ -531,7 +536,7 @@ mod test {
 
     #[test]
     fn one_success() {
-        let d = ParseMaster::<_, AnError>::new();
+        let mut d = ParseMaster::<_, AnError>::new();
 
         let r = d.finish(Progress { point: 0, status: Status::Success(42) });
 
@@ -788,7 +793,7 @@ mod test {
             Progress { point: pt, status: Status::Success((a,b,c)) }
         }
 
-        let d = ParseMaster::new();
+        let mut d = ParseMaster::new();
         let pt = StringPoint::new("abc");
 
         let r = all(pt);
