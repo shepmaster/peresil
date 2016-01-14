@@ -412,6 +412,11 @@ impl<'a> StringPoint<'a> {
         StringPoint { s: s, offset: 0 }
     }
 
+    #[inline]
+    pub fn is_empty(self) -> bool {
+        self.s.is_empty()
+    }
+
     /// Slices the string.
     #[inline]
     pub fn to(self, other: StringPoint<'a>) -> &'a str {
