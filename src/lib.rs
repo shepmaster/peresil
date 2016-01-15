@@ -294,13 +294,18 @@ impl<'a, P, E> ParseMaster<P, E>
     }
 
     /// When parsing is complete, provide the final result and gain
-    /// access to all failures.
-    pub fn finish<T>(mut self, progress: Progress<P, T, E>) -> Progress<P, T, Vec<E>> {
+    /// access to all failures. Will be recycled and may be used for
+    /// further parsing.
+    pub fn finish<T>(&mut self, progress: Progress<P, T, E>) -> Progress<P, T, Vec<E>> {
         let progress = self.consume(progress);
 
         match progress {
             Progress { status: Status::Success(..), .. } => progress.map_err(|_| Vec::new()),
-            Progress { status: Status::Failure(..), .. } => self.failures.into_progress(),
+            Progress { status: Status::Failure(..), .. } => {
+                use std::mem;
+                let f = mem::replace(&mut self.failures, Failures::new());
+                f.into_progress()
+            },
         }
     }
 }
@@ -402,16 +407,24 @@ impl<'a> Point for StringPoint<'a> {
 }
 
 impl<'a> StringPoint<'a> {
+    #[inline]
     pub fn new(s: &'a str) -> StringPoint<'a> {
         StringPoint { s: s, offset: 0 }
     }
 
+    #[inline]
+    pub fn is_empty(self) -> bool {
+        self.s.is_empty()
+    }
+
     /// Slices the string.
+    #[inline]
     pub fn to(self, other: StringPoint<'a>) -> &'a str {
         let len = other.offset - self.offset;
         &self.s[..len]
     }
 
+    #[inline]
     fn success(self, len: usize) -> Progress<StringPoint<'a>, &'a str, ()> {
         let matched = &self.s[..len];
         let rest = &self.s[len..];
@@ -422,6 +435,7 @@ impl<'a> StringPoint<'a> {
         }
     }
 
+    #[inline]
     fn fail<T>(self) -> Progress<StringPoint<'a>, T, ()> {
         Progress { point: self, status: Status::Failure(()) }
     }
@@ -429,6 +443,7 @@ impl<'a> StringPoint<'a> {
     /// Advances the point by the number of bytes. If the value is
     /// `None`, then no value was able to be consumed, and the result
     /// is a failure.
+    #[inline]
     pub fn consume_to(&self, l: Option<usize>) -> Progress<StringPoint<'a>, &'a str, ()> {
         match l {
             None => self.fail(),
@@ -437,6 +452,7 @@ impl<'a> StringPoint<'a> {
     }
 
     /// Advances the point if it starts with the literal.
+    #[inline]
     pub fn consume_literal(self, val: &str) -> Progress<StringPoint<'a>, &'a str, ()> {
         if self.s.starts_with(val) {
             self.success(val.len())
@@ -447,6 +463,7 @@ impl<'a> StringPoint<'a> {
 
     /// Iterates through the identifiers and advances the point on the
     /// first matching identifier.
+    #[inline]
     pub fn consume_identifier<T>(self, identifiers: &[Identifier<T>])
                                  -> Progress<StringPoint<'a>, T, ()>
         where T: Clone
@@ -480,7 +497,7 @@ mod test {
 
     #[test]
     fn one_error() {
-        let d = ParseMaster::new();
+        let mut d = ParseMaster::new();
 
         let r = d.finish::<()>(Progress { point: 0, status: Status::Failure(AnError(1)) });
 
@@ -531,7 +548,7 @@ mod test {
 
     #[test]
     fn one_success() {
-        let d = ParseMaster::<_, AnError>::new();
+        let mut d = ParseMaster::<_, AnError>::new();
 
         let r = d.finish(Progress { point: 0, status: Status::Success(42) });
 
@@ -788,7 +805,7 @@ mod test {
             Progress { point: pt, status: Status::Success((a,b,c)) }
         }
 
-        let d = ParseMaster::new();
+        let mut d = ParseMaster::new();
         let pt = StringPoint::new("abc");
 
         let r = all(pt);
