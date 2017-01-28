@@ -54,6 +54,19 @@
 //! }
 //!
 
+/// An analog to `try!`, but for `Progress`
+#[macro_export]
+macro_rules! try_parse(
+    ($e:expr) => ({
+        match $e {
+            $crate::Progress { status: $crate::Status::Success(val), point } => (point, val),
+            $crate::Progress { status: $crate::Status::Failure(val), point } => {
+                return $crate::Progress { point: point, status: $crate::Status::Failure(val.into()) }
+            }
+        }
+    });
+);
+
 /// A location in the parsed data
 pub trait Point: Ord + Copy {
     /// The initial point
@@ -361,19 +374,6 @@ impl<'pm, P, T, E> Alternate<'pm, P, T, E>
         self.current.unwrap()
     }
 }
-
-/// An analog to `try!`, but for `Progress`
-#[macro_export]
-macro_rules! try_parse(
-    ($e:expr) => ({
-        match $e {
-            $crate::Progress { status: $crate::Status::Success(val), point } => (point, val),
-            $crate::Progress { status: $crate::Status::Failure(val), point } => {
-                return $crate::Progress { point: point, status: $crate::Status::Failure(val.into()) }
-            }
-        }
-    });
-);
 
 /// Matches a literal string to a specific type, usually an enum.
 pub type Identifier<'a, T> = (&'a str, T);
