@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "combinators", feature(conservative_impl_trait))]
+
 //! A simple and simplistic parsing library
 //!
 //! ### Example
@@ -66,6 +68,9 @@ macro_rules! try_parse(
         }
     });
 );
+
+#[cfg(feature = "combinators")]
+pub mod combinators;
 
 /// A location in the parsed data
 pub trait Point: Ord + Copy {
