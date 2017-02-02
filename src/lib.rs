@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "combinators", feature(conservative_impl_trait))]
+
 //! A simple and simplistic parsing library
 //!
 //! ### Example
@@ -23,17 +25,17 @@
 //! fn parse_basic<'a>(pm: &mut DemoMaster<'a>, pt: StringPoint<'a>)
 //!                   -> DemoProgress<'a, (&'a str, &'a str)>
 //! {
-//!     let tmp = pm.alternate()
-//!         .one(|_| pt.consume_literal("goodbye").map_err(|_| DemoError::ExpectedGreeting))
-//!         .one(|_| pt.consume_literal("hello").map_err(|_| DemoError::ExpectedGreeting))
+//!     let tmp = pm.alternate(pt)
+//!         .one(|_, pt| pt.consume_literal("goodbye").map_err(|_| DemoError::ExpectedGreeting))
+//!         .one(|_, pt| pt.consume_literal("hello").map_err(|_| DemoError::ExpectedGreeting))
 //!         .finish();
 //!     let (pt, greeting) = try_parse!(tmp);
 //!
 //!     let (pt, _) = try_parse!(pt.consume_literal(" ").map_err(|_| DemoError::ExpectedWhitespace));
 //!
-//!     let tmp = pm.alternate()
-//!         .one(|_| pt.consume_literal("world").map_err(|_| DemoError::ExpectedObject))
-//!         .one(|_| pt.consume_literal("moon").map_err(|_| DemoError::ExpectedObject))
+//!     let tmp = pm.alternate(pt)
+//!         .one(|_, pt| pt.consume_literal("world").map_err(|_| DemoError::ExpectedObject))
+//!         .one(|_, pt| pt.consume_literal("moon").map_err(|_| DemoError::ExpectedObject))
 //!         .finish();
 //!     let (pt, object) = try_parse!(tmp);
 //!
@@ -53,6 +55,22 @@
 //!     println!("Parsed [{}], [{}]", greeting, object);
 //! }
 //!
+
+/// An analog to `try!`, but for `Progress`
+#[macro_export]
+macro_rules! try_parse(
+    ($e:expr) => ({
+        match $e {
+            $crate::Progress { status: $crate::Status::Success(val), point } => (point, val),
+            $crate::Progress { status: $crate::Status::Failure(val), point } => {
+                return $crate::Progress { point: point, status: $crate::Status::Failure(val.into()) }
+            }
+        }
+    });
+);
+
+#[cfg(feature = "combinators")]
+pub mod combinators;
 
 /// A location in the parsed data
 pub trait Point: Ord + Copy {
@@ -253,10 +271,11 @@ impl<'a, P, E> ParseMaster<P, E>
     }
 
     /// Run sub-parsers in order until one succeeds.
-    pub fn alternate<'pm, T>(&'pm mut self) -> Alternate<'pm, P, T, E> {
+    pub fn alternate<'pm, T>(&'pm mut self, pt: P) -> Alternate<'pm, P, T, E> {
         Alternate {
             master: self,
             current: None,
+            point: pt,
         }
     }
 
@@ -315,6 +334,7 @@ impl<'a, P, E> ParseMaster<P, E>
 pub struct Alternate<'pm, P : 'pm, T, E : 'pm> {
     master: &'pm mut ParseMaster<P, E>,
     current: Option<Progress<P, T, E>>,
+    point: P,
 }
 
 impl<'pm, P, T, E> Alternate<'pm, P, T, E>
@@ -322,9 +342,9 @@ impl<'pm, P, T, E> Alternate<'pm, P, T, E>
           E: Recoverable,
 {
     fn run_one<F>(&mut self, parser: F)
-        where F: FnOnce(&mut ParseMaster<P, E>) -> Progress<P, T, E>
+        where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>
     {
-        let r = parser(self.master);
+        let r = parser(self.master, self.point);
         if let Some(prev) = self.current.take() {
             // We don't care about the previous error, once we've consumed it
             let _ = self.master.consume(prev);
@@ -334,7 +354,7 @@ impl<'pm, P, T, E> Alternate<'pm, P, T, E>
 
     /// Run one alternative parser.
     pub fn one<F>(mut self, parser: F) -> Alternate<'pm, P, T, E>
-        where F: FnOnce(&mut ParseMaster<P, E>) -> Progress<P, T, E>
+        where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>
     {
         let recoverable =
             if let Some(Progress { status: Status::Failure(ref f), .. }) = self.current {
@@ -359,19 +379,6 @@ impl<'pm, P, T, E> Alternate<'pm, P, T, E>
         self.current.unwrap()
     }
 }
-
-/// An analog to `try!`, but for `Progress`
-#[macro_export]
-macro_rules! try_parse(
-    ($e:expr) => ({
-        match $e {
-            $crate::Progress { status: $crate::Status::Success(val), point } => (point, val),
-            $crate::Progress { status: $crate::Status::Failure(val), point } => {
-                return $crate::Progress { point: point, status: $crate::Status::Failure(val) }
-            }
-        }
-    });
-);
 
 /// Matches a literal string to a specific type, usually an enum.
 pub type Identifier<'a, T> = (&'a str, T);
@@ -508,9 +515,9 @@ mod test {
     fn two_error_at_same_point() {
         let mut d = ParseMaster::new();
 
-        let r = d.alternate::<()>()
-            .one(|_| Progress { point: 0, status: Status::Failure(AnError(1)) })
-            .one(|_| Progress { point: 0, status: Status::Failure(AnError(2)) })
+        let r = d.alternate::<()>(0)
+            .one(|_, _| Progress { point: 0, status: Status::Failure(AnError(1)) })
+            .one(|_, _| Progress { point: 0, status: Status::Failure(AnError(2)) })
             .finish();
 
         let r = d.finish(r);
@@ -522,9 +529,9 @@ mod test {
     fn first_error_is_better() {
         let mut d = ParseMaster::new();
 
-        let r = d.alternate::<()>()
-            .one(|_| Progress { point: 1, status: Status::Failure(AnError(1)) })
-            .one(|_| Progress { point: 0, status: Status::Failure(AnError(2)) })
+        let r = d.alternate::<()>(0)
+            .one(|_, _| Progress { point: 1, status: Status::Failure(AnError(1)) })
+            .one(|_, _| Progress { point: 0, status: Status::Failure(AnError(2)) })
             .finish();
 
         let r = d.finish(r);
@@ -536,9 +543,9 @@ mod test {
     fn second_error_is_better() {
         let mut d = ParseMaster::new();
 
-        let r = d.alternate::<()>()
-            .one(|_| Progress { point: 0, status: Status::Failure(AnError(1)) })
-            .one(|_| Progress { point: 1, status: Status::Failure(AnError(2)) })
+        let r = d.alternate::<()>(0)
+            .one(|_, _| Progress { point: 0, status: Status::Failure(AnError(1)) })
+            .one(|_, _| Progress { point: 1, status: Status::Failure(AnError(2)) })
             .finish();
 
         let r = d.finish(r);
@@ -559,9 +566,9 @@ mod test {
     fn success_after_failure() {
         let mut d = ParseMaster::new();
 
-        let r = d.alternate()
-            .one(|_| Progress { point: 0, status: Status::Failure(AnError(1)) })
-            .one(|_| Progress { point: 0, status: Status::Success(42) })
+        let r = d.alternate(0)
+            .one(|_, _| Progress { point: 0, status: Status::Failure(AnError(1)) })
+            .one(|_, _| Progress { point: 0, status: Status::Success(42) })
             .finish();
 
         let r = d.finish(r);
@@ -572,9 +579,9 @@ mod test {
     fn success_before_failure() {
         let mut d = ParseMaster::<_, AnError>::new();
 
-        let r = d.alternate()
-            .one(|_| Progress { point: 0, status: Status::Success(42) })
-            .one(|_| panic!("Should not even be called"))
+        let r = d.alternate(0)
+            .one(|_, _| Progress { point: 0, status: Status::Success(42) })
+            .one(|_, _| panic!("Should not even be called"))
             .finish();
 
         let r = d.finish(r);
@@ -669,9 +676,9 @@ mod test {
         }
 
         fn both(d: &mut SimpleMaster, pt: usize) -> Progress<usize, u8, AnError> {
-            d.alternate()
-                .one(|d| first(d, pt))
-                .one(|d| second(d, pt))
+            d.alternate(pt)
+                .one(first)
+                .one(second)
                 .finish()
         }
 
@@ -685,9 +692,9 @@ mod test {
     #[test]
     fn alternate_stops_parsing_after_unrecoverable_failure() {
         let mut d = ParseMaster::new();
-        let r = d.alternate()
-            .one(|_| Progress { point: 0, status: Status::Failure(AnError(255)) })
-            .one(|_| Progress { point: 0, status: Status::Success(()) })
+        let r = d.alternate(0)
+            .one(|_, _| Progress { point: 0, status: Status::Failure(AnError(255)) })
+            .one(|_, _| Progress { point: 0, status: Status::Success(()) })
             .finish();
         let r = d.finish(r);
 
@@ -817,10 +824,10 @@ mod test {
     #[test]
     fn string_alternate() {
         fn any<'a>(d: &mut StringMaster<'a>, pt: StringPoint<'a>) -> StringProgress<'a, &'a str> {
-            d.alternate()
-                .one(|_| pt.consume_literal("a").map_err(|_| AnError(1)))
-                .one(|_| pt.consume_literal("b").map_err(|_| AnError(2)))
-                .one(|_| pt.consume_literal("c").map_err(|_| AnError(3)))
+            d.alternate(pt)
+                .one(|_, pt| pt.consume_literal("a").map_err(|_| AnError(1)))
+                .one(|_, pt| pt.consume_literal("b").map_err(|_| AnError(2)))
+                .one(|_, pt| pt.consume_literal("c").map_err(|_| AnError(3)))
                 .finish()
         }
 
