@@ -150,6 +150,20 @@ impl<T, E> Status<T, E> {
         }
     }
 
+    fn and_then<F, T2>(self, f: F) -> Status<T2, E>
+        where F: FnOnce(T) -> Result<T2, E>
+    {
+        match self {
+            Status::Success(x) => {
+                match f(x) {
+                    Ok(v) => Status::Success(v),
+                    Err(e) => Status::Failure(e),
+                }
+            },
+            Status::Failure(x) => Status::Failure(x),
+        }
+    }
+
     fn map_err<F, E2>(self, f: F) -> Status<T, E2>
         where F: FnOnce(E) -> E2
     {
@@ -189,6 +203,14 @@ impl<P, T, E> Progress<P, T, E> {
         where F: FnOnce(T) -> T2
     {
         Progress { point: self.point, status: self.status.map(f) }
+    }
+
+    /// Convert the success value, if there is one, potentially
+    /// converting into a failure.
+    pub fn and_then<F, T2>(self, f: F) -> Progress<P, T2, E>
+        where F: FnOnce(T) -> Result<T2, E>
+    {
+        Progress { point: self.point, status: self.status.and_then(f) }
     }
 
     /// Convert the failure value, if there is one.
