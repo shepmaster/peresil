@@ -454,7 +454,7 @@ impl<'a> StringPoint<'a> {
     }
 
     #[inline]
-    fn success(self, len: usize) -> Progress<StringPoint<'a>, &'a str, ()> {
+    pub fn success<E>(self, len: usize) -> Progress<StringPoint<'a>, &'a str, E> {
         let matched = &self.s[..len];
         let rest = &self.s[len..];
 
