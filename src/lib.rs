@@ -248,9 +248,9 @@ impl<'a, P, E> ParseMaster<P, E>
     /// Returns the value on success, or rewinds the point and returns
     /// `None` on a recoverable failure. Non-recoverable failures are
     /// propagated.
-    pub fn optional<T, F>(&mut self, point: P, mut parser: F)
+    pub fn optional<T, F>(&mut self, point: P, parser: F)
                           -> Progress<P, Option<T>, E>
-        where F: FnMut(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+        where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
     {
         let orig_point = point;
         // If we fail N optionals and then a required, it'd be nice to
