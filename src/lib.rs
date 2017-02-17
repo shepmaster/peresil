@@ -207,10 +207,13 @@ impl<P, T, E> Progress<P, T, E> {
 
     /// Convert the success value, if there is one, potentially
     /// converting into a failure.
-    pub fn and_then<F, T2>(self, f: F) -> Progress<P, T2, E>
+    pub fn and_then<F, T2>(self, restore_to: P, f: F) -> Progress<P, T2, E>
         where F: FnOnce(T) -> Result<T2, E>
     {
-        Progress { point: self.point, status: self.status.and_then(f) }
+        match self.status.and_then(f) {
+            s @ Status::Success(..) => Progress { point: self.point, status: s },
+            s @ Status::Failure(..) => Progress { point: restore_to, status: s },
+        }
     }
 
     /// Convert the failure value, if there is one.
