@@ -242,17 +242,28 @@ impl<P, T, E> Progress<P, T, E> {
 /// helper methods for parsing alternative paths and sequences of
 /// other parsers.
 #[derive(Debug,PartialEq)]
-pub struct ParseMaster<P, E> {
+pub struct ParseMaster<P, E, S = ()> {
     failures: Failures<P, E>,
+    pub state: S,
 }
 
 impl<'a, P, E> ParseMaster<P, E>
     where P: Point,
           E: Recoverable,
 {
-    pub fn new() -> ParseMaster<P, E> {
+    pub fn new() -> ParseMaster<P, E, ()> {
+        ParseMaster::with_state(())
+    }
+}
+
+impl<'a, P, E, S> ParseMaster<P, E, S>
+    where P: Point,
+          E: Recoverable,
+{
+    pub fn with_state(state: S) -> ParseMaster<P, E, S> {
         ParseMaster {
             failures: Failures::new(),
+            state: state,
         }
     }
 
@@ -275,7 +286,7 @@ impl<'a, P, E> ParseMaster<P, E>
     /// propagated.
     pub fn optional<T, F>(&mut self, point: P, parser: F)
                           -> Progress<P, Option<T>, E>
-        where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+        where F: FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>,
     {
         let orig_point = point;
         // If we fail N optionals and then a required, it'd be nice to
@@ -296,7 +307,7 @@ impl<'a, P, E> ParseMaster<P, E>
     }
 
     /// Run sub-parsers in order until one succeeds.
-    pub fn alternate<'pm, T>(&'pm mut self, pt: P) -> Alternate<'pm, P, T, E> {
+    pub fn alternate<'pm, T>(&'pm mut self, pt: P) -> Alternate<'pm, P, T, E, S> {
         Alternate {
             master: self,
             current: None,
@@ -311,7 +322,7 @@ impl<'a, P, E> ParseMaster<P, E>
     /// the last successful parse.  If the error is not recoverable,
     /// the error will be passed through directly.
     pub fn zero_or_more<F, T>(&mut self, point: P, mut parser: F) -> Progress<P, Vec<T>, E>
-        where F: FnMut(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>
+        where F: FnMut(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>
     {
         let mut current_point = point;
         let mut values = Vec::new();
@@ -356,18 +367,18 @@ impl<'a, P, E> ParseMaster<P, E>
 
 /// Follows the first successful parsing path.
 #[must_use]
-pub struct Alternate<'pm, P : 'pm, T, E : 'pm> {
-    master: &'pm mut ParseMaster<P, E>,
+pub struct Alternate<'pm, P : 'pm, T, E : 'pm, S : 'pm> {
+    master: &'pm mut ParseMaster<P, E, S>,
     current: Option<Progress<P, T, E>>,
     point: P,
 }
 
-impl<'pm, P, T, E> Alternate<'pm, P, T, E>
+impl<'pm, P, T, E, S> Alternate<'pm, P, T, E, S>
     where P: Point,
           E: Recoverable,
 {
     fn run_one<F>(&mut self, parser: F)
-        where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>
+        where F: FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>
     {
         let r = parser(self.master, self.point);
         if let Some(prev) = self.current.take() {
@@ -378,8 +389,8 @@ impl<'pm, P, T, E> Alternate<'pm, P, T, E>
     }
 
     /// Run one alternative parser.
-    pub fn one<F>(mut self, parser: F) -> Alternate<'pm, P, T, E>
-        where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>
+    pub fn one<F>(mut self, parser: F) -> Alternate<'pm, P, T, E, S>
+        where F: FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>
     {
         let recoverable =
             if let Some(Progress { status: Status::Failure(ref f), .. }) = self.current {

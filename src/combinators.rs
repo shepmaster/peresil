@@ -33,20 +33,20 @@ impl<T> IntoAppend<T> for Option<T> {
     }
 }
 
-pub fn optional<P, E, F, T>
+pub fn optional<P, E, S, F, T>
     (parser: F)
-     -> impl FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, Option<T>, E>
-    where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+     -> impl FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, Option<T>, E>
+    where F: FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>,
           P: Point,
           E: Recoverable,
 {
     move |pm, pt| pm.optional(pt, parser)
 }
 
-pub fn optional_append<P, E, A, F, T>
+pub fn optional_append<P, E, S, A, F, T>
     (append_to: A, parser: F)
-     -> impl FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, Vec<T>, E>
-    where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+     -> impl FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, Vec<T>, E>
+    where F: FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>,
           A: IntoAppend<T>,
           P: Point,
           //E: Recoverable, // TODO: use this
@@ -65,20 +65,20 @@ pub fn optional_append<P, E, A, F, T>
     }
 }
 
-pub fn zero_or_more<P, E, F, T>
+pub fn zero_or_more<P, E, S, F, T>
     (parser: F)
-     -> impl Fn(&mut ParseMaster<P, E>, P) -> Progress<P, Vec<T>, E>
-    where F: Fn(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+     -> impl Fn(&mut ParseMaster<P, E, S>, P) -> Progress<P, Vec<T>, E>
+    where F: Fn(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>,
           P: Point,
           E: Recoverable,
 {
     move |pm, pt| pm.zero_or_more(pt, &parser) // what why ref?
 }
 
-pub fn zero_or_more_append<P, E, A, F, T>
+pub fn zero_or_more_append<P, E, S, A, F, T>
     (append_to: A, parser: F)
-     -> impl FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, Vec<T>, E>
-    where F: Fn(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+     -> impl FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, Vec<T>, E>
+    where F: Fn(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>,
           A: IntoAppend<T>,
           P: Point,
           E: Recoverable,
@@ -97,10 +97,10 @@ pub fn zero_or_more_append<P, E, A, F, T>
     }
 }
 
-pub fn one_or_more<P, E, F, T>
+pub fn one_or_more<P, E, S, F, T>
     (parser: F)
-     -> impl FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, Vec<T>, E>
-    where F: Fn(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+     -> impl FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, Vec<T>, E>
+    where F: Fn(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>,
           P: Point,
           E: Recoverable,
 {
@@ -113,10 +113,10 @@ pub fn one_or_more<P, E, F, T>
     }
 }
 
-pub fn one_or_more_append<P, E, A, F, T>
+pub fn one_or_more_append<P, E, S, A, F, T>
     (append_to: A, parser: F)
-     -> impl FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, Vec<T>, E>
-    where F: Fn(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+     -> impl FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, Vec<T>, E>
+    where F: Fn(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>,
           A: IntoAppend<T>,
           P: Point,
           E: Recoverable,
@@ -131,10 +131,10 @@ pub fn one_or_more_append<P, E, A, F, T>
     }
 }
 
-pub fn map<P, E, F, C, T, U>
+pub fn map<P, E, S, F, C, T, U>
     (parser: F, convert: C)
-     -> impl FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, U, E>
-    where F: FnOnce(&mut ParseMaster<P, E>, P) -> Progress<P, T, E>,
+     -> impl FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, U, E>
+    where F: FnOnce(&mut ParseMaster<P, E, S>, P) -> Progress<P, T, E>,
           C: FnOnce(T) -> U,
           P: Point,
           E: Recoverable,
@@ -144,21 +144,32 @@ pub fn map<P, E, F, C, T, U>
     }
 }
 
-pub fn point<P, E>
-    (_: &mut ParseMaster<P, E>, pt: P)
+pub fn point<P, E, S>
+    (_: &mut ParseMaster<P, E, S>, pt: P)
      -> Progress<P, P, E>
     where P: Clone,
 {
     Progress::success(pt.clone(), pt)
 }
 
-pub fn inspect<P, E, F>
+pub fn inspect<P, E, S, F>
     (f: F)
-     -> impl Fn(&mut ParseMaster<P, E>, P) -> Progress<P, (), E>
+     -> impl Fn(&mut ParseMaster<P, E, S>, P) -> Progress<P, (), E>
     where F: Fn(&P),
 {
     move |_, pt| {
         f(&pt);
+        Progress::success(pt, ())
+    }
+}
+
+pub fn state<P, E, S, F>
+    (f: F)
+     -> impl Fn(&mut ParseMaster<P, E, S>, P) -> Progress<P, (), E>
+    where F: Fn(&mut S),
+{
+    move |pm, pt| {
+        f(&mut pm.state);
         Progress::success(pt, ())
     }
 }
