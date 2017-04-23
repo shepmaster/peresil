@@ -524,6 +524,62 @@ impl<'a> StringPoint<'a> {
     }
 }
 
+#[derive(Debug)]
+pub struct SlicePoint<'s, T: 's> {
+    pub offset: usize,
+    pub s: &'s [T],
+}
+
+impl<'s, T: 's> SlicePoint<'s, T> {
+    pub fn new(slice: &'s [T]) -> Self {
+        SlicePoint {
+            offset: 0,
+            s: slice,
+        }
+    }
+
+    pub fn advance_by(&self, offset: usize) -> Self {
+        SlicePoint {
+            s: &self.s[offset..],
+            offset: self.offset + offset,
+        }
+    }
+}
+
+impl<'s, T> Point for SlicePoint<'s, T> {
+    fn zero() -> Self {
+        SlicePoint {
+            offset: 0,
+            s: &[],
+        }
+    }
+}
+
+impl<'s, T> Copy for SlicePoint<'s, T> {}
+impl<'s, T> Clone for SlicePoint<'s, T> {
+    fn clone(&self) -> Self { *self }
+}
+
+impl<'s, T> PartialOrd for SlicePoint<'s, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'s, T> Ord for SlicePoint<'s, T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.offset.cmp(&other.offset)
+    }
+}
+
+impl<'s, T> PartialEq for SlicePoint<'s, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.offset.eq(&other.offset)
+    }
+}
+
+impl<'s, T> Eq for SlicePoint<'s, T> {}
+
 #[cfg(test)]
 mod test {
     use super::{ParseMaster,Progress,Status,StringPoint,Recoverable};
