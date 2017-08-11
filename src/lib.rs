@@ -134,7 +134,7 @@ impl<P, E> Failures<P, E>
 }
 
 /// An analog to `Result`, specialized for parsing.
-#[derive(Debug,PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Status<T, E> {
     Success(T),
     Failure(E)
@@ -181,7 +181,7 @@ impl<T, E> Status<T, E> {
 /// The returned point indicates where to next start parsing, often
 /// unchanged on failure.
 #[must_use]
-#[derive(Debug,PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Progress<P, T, E> {
     /// The current location.
     pub point: P,
