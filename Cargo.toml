@@ -15,4 +15,5 @@ documentation = "https://shepmaster.github.io/peresil/"
 license = "MIT"
 
 [features]
+default = ["combinators"]
 combinators = []

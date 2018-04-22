@@ -1,5 +1,3 @@
-#![cfg_attr(feature = "combinators", feature(conservative_impl_trait))]
-
 //! A simple and simplistic parsing library
 //!
 //! ### Example
