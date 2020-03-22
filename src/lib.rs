@@ -290,7 +290,7 @@ pub struct ParseMaster<P, E, S = ()> {
     pub state: S,
 }
 
-impl<'a, P, E> Default for ParseMaster<P, E>
+impl<P, E> Default for ParseMaster<P, E>
 where
     P: Point,
     E: Recoverable,
@@ -300,7 +300,7 @@ where
     }
 }
 
-impl<'a, P, E> ParseMaster<P, E>
+impl<P, E> ParseMaster<P, E>
 where
     P: Point,
     E: Recoverable,
@@ -310,7 +310,7 @@ where
     }
 }
 
-impl<'a, P, E, S> ParseMaster<P, E, S>
+impl<P, E, S> ParseMaster<P, E, S>
 where
     P: Point,
     E: Recoverable,
