@@ -142,10 +142,7 @@ fn parse_ingredient<'a>(
     let (pt, name) = try_parse!(parse_name(pm, pt));
 
     let i = Ingredient {
-        amount: Amount {
-            size: size,
-            unit: unit,
-        },
+        amount: Amount { size, unit },
         name: name.to_owned(),
     };
     peresil::Progress::success(pt, i)

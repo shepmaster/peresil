@@ -208,14 +208,14 @@ pub struct Progress<P, T, E> {
 impl<P, T, E> Progress<P, T, E> {
     pub fn success(point: P, val: T) -> Progress<P, T, E> {
         Progress {
-            point: point,
+            point,
             status: Status::Success(val),
         }
     }
 
     pub fn failure(point: P, val: E) -> Progress<P, T, E> {
         Progress {
-            point: point,
+            point,
             status: Status::Failure(val),
         }
     }
@@ -308,7 +308,7 @@ where
     pub fn with_state(state: S) -> ParseMaster<P, E, S> {
         ParseMaster {
             failures: Failures::new(),
-            state: state,
+            state,
         }
     }
 
@@ -329,7 +329,7 @@ where
                 }
                 Progress {
                     status: Status::Failure(()),
-                    point: point,
+                    point,
                 }
             }
         }
@@ -406,7 +406,7 @@ where
                     } else {
                         return Progress {
                             status: Status::Failure(f),
-                            point: point,
+                            point,
                         };
                     }
                 }
@@ -545,7 +545,7 @@ impl<'a> Point for StringPoint<'a> {
 impl<'a> StringPoint<'a> {
     #[inline]
     pub fn new(s: &'a str) -> StringPoint<'a> {
-        StringPoint { s: s, offset: 0 }
+        StringPoint { s, offset: 0 }
     }
 
     #[inline]
