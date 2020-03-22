@@ -22,13 +22,13 @@
 #[macro_use]
 extern crate peresil;
 
-use peresil::{ParseMaster, StringPoint, Recoverable};
+use peresil::{ParseMaster, Recoverable, StringPoint};
 
 // It's recommended to make type aliases to clean up signatures
 type CalcMaster<'a> = ParseMaster<StringPoint<'a>, Error>;
 type CalcProgress<'a, T> = peresil::Progress<StringPoint<'a>, T, Error>;
 
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Expression {
     Add(Box<Expression>, Box<Expression>),
     Sub(Box<Expression>, Box<Expression>),
@@ -46,12 +46,12 @@ impl Expression {
             Sub(ref l, ref r) => l.evaluate() - r.evaluate(),
             Mul(ref l, ref r) => l.evaluate() * r.evaluate(),
             Div(ref l, ref r) => l.evaluate() / r.evaluate(),
-            Num(v)            => v as i32,
+            Num(v) => v as i32,
         }
     }
 }
 
-#[derive(Debug,Copy,Clone,PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum Error {
     ExpectedNumber,
     InvalidNumber(u8),
@@ -74,11 +74,14 @@ type LeftAssociativeRule<'a> = (&'static str, &'a Fn(Expression, Expression) -> 
 /// Iteratively parses left-associative operators, avoiding infinite
 /// recursion. Provide a `child_parser` that corresponds to each side
 /// of the operator, as well as a rule for each operator.
-fn parse_left_associative_operator<'a, P>(pm: &mut CalcMaster<'a>, pt: StringPoint<'a>,
-                                          child_parser: P, rules: &[LeftAssociativeRule])
-                                          -> CalcProgress<'a, Expression>
-    where P: for <'b> Fn(&mut CalcMaster<'b>, StringPoint<'b>)
-                         -> CalcProgress<'b, Expression>
+fn parse_left_associative_operator<'a, P>(
+    pm: &mut CalcMaster<'a>,
+    pt: StringPoint<'a>,
+    child_parser: P,
+    rules: &[LeftAssociativeRule],
+) -> CalcProgress<'a, Expression>
+where
+    P: for<'b> Fn(&mut CalcMaster<'b>, StringPoint<'b>) -> CalcProgress<'b, Expression>,
 {
     let (pt, mut a) = try_parse!(child_parser(pm, pt));
     let mut start = pt;
@@ -88,7 +91,9 @@ fn parse_left_associative_operator<'a, P>(pm: &mut CalcMaster<'a>, pt: StringPoi
 
         for &(ref operator, ref builder) in rules {
             let (pt, op) = start.consume_literal(operator).optional(start);
-            if op.is_none() { continue; }
+            if op.is_none() {
+                continue;
+            }
 
             let (pt, b) = try_parse!(child_parser(pm, pt));
 
@@ -99,7 +104,9 @@ fn parse_left_associative_operator<'a, P>(pm: &mut CalcMaster<'a>, pt: StringPoi
             break;
         }
 
-        if !matched { break; }
+        if !matched {
+            break;
+        }
     }
 
     peresil::Progress::success(pt, a)
@@ -111,7 +118,11 @@ fn parse_num<'a>(_: &mut CalcMaster<'a>, pt: StringPoint<'a>) -> CalcProgress<'a
 
     // We can cheat and know that ASCII 0-9 only takes one byte each
     let digits = pt.s.chars().take_while(|&c| c >= '0' && c <= '9').count();
-    let r = if digits == 0 { pt.consume_to(None) } else { pt.consume_to(Some(digits)) };
+    let r = if digits == 0 {
+        pt.consume_to(None)
+    } else {
+        pt.consume_to(Some(digits))
+    };
 
     let (pt, v) = try_parse!(r.map_err(|_| Error::ExpectedNumber));
 
@@ -128,17 +139,27 @@ fn parse_num<'a>(_: &mut CalcMaster<'a>, pt: StringPoint<'a>) -> CalcProgress<'a
 }
 
 fn parse_muldiv<'a>(pm: &mut CalcMaster<'a>, pt: StringPoint<'a>) -> CalcProgress<'a, Expression> {
-    parse_left_associative_operator(pm, pt, parse_num, &[
-        ("*", &|a, b| Expression::Mul(Box::new(a), Box::new(b))),
-        ("/", &|a, b| Expression::Div(Box::new(a), Box::new(b))),
-    ])
+    parse_left_associative_operator(
+        pm,
+        pt,
+        parse_num,
+        &[
+            ("*", &|a, b| Expression::Mul(Box::new(a), Box::new(b))),
+            ("/", &|a, b| Expression::Div(Box::new(a), Box::new(b))),
+        ],
+    )
 }
 
 fn parse_addsub<'a>(pm: &mut CalcMaster<'a>, pt: StringPoint<'a>) -> CalcProgress<'a, Expression> {
-    parse_left_associative_operator(pm, pt, parse_muldiv, &[
-        ("+", &|a, b| Expression::Add(Box::new(a), Box::new(b))),
-        ("-", &|a, b| Expression::Sub(Box::new(a), Box::new(b))),
-    ])
+    parse_left_associative_operator(
+        pm,
+        pt,
+        parse_muldiv,
+        &[
+            ("+", &|a, b| Expression::Add(Box::new(a), Box::new(b))),
+            ("-", &|a, b| Expression::Sub(Box::new(a), Box::new(b))),
+        ],
+    )
 }
 
 fn parse(s: &str) -> Result<Expression, (usize, Vec<Error>)> {
@@ -147,12 +168,20 @@ fn parse(s: &str) -> Result<Expression, (usize, Vec<Error>)> {
 
     let result = parse_addsub(&mut pm, pt);
     match pm.finish(result) {
-        peresil::Progress { status: peresil::Status::Success(v), .. } => Ok(v),
-        peresil::Progress { status: peresil::Status::Failure(f), point } => Err((point.offset, f)),
+        peresil::Progress {
+            status: peresil::Status::Success(v),
+            ..
+        } => Ok(v),
+        peresil::Progress {
+            status: peresil::Status::Failure(f),
+            point,
+        } => Err((point.offset, f)),
     }
 }
 
-fn n(n: u8) -> Box<Expression> { Box::new(Expression::Num(n)) }
+fn n(n: u8) -> Box<Expression> {
+    Box::new(Expression::Num(n))
+}
 
 #[test]
 fn single_number() {
