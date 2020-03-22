@@ -290,6 +290,16 @@ pub struct ParseMaster<P, E, S = ()> {
     pub state: S,
 }
 
+impl<'a, P, E> Default for ParseMaster<P, E>
+where
+    P: Point,
+    E: Recoverable,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a, P, E> ParseMaster<P, E>
 where
     P: Point,
