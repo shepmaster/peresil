@@ -365,7 +365,7 @@ where
     }
 
     /// Run sub-parsers in order until one succeeds.
-    pub fn alternate<'pm, T>(&'pm mut self, pt: P) -> Alternate<'pm, P, T, E, S> {
+    pub fn alternate<T>(&mut self, pt: P) -> Alternate<'_, P, T, E, S> {
         Alternate {
             master: self,
             current: None,
