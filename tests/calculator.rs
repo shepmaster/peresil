@@ -69,7 +69,10 @@ impl Recoverable for Error {
 }
 
 /// Maps an operator to a function that builds the corresponding Expression
-type LeftAssociativeRule<'a> = (&'static str, &'a Fn(Expression, Expression) -> Expression);
+type LeftAssociativeRule<'a> = (
+    &'static str,
+    &'a dyn Fn(Expression, Expression) -> Expression,
+);
 
 /// Iteratively parses left-associative operators, avoiding infinite
 /// recursion. Provide a `child_parser` that corresponds to each side
